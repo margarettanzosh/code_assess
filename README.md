@@ -17,7 +17,7 @@ wget https://raw.githubusercontent.com/margarettanzosh/distro/refs/heads/main/se
 wget https://raw.githubusercontent.com/margarettanzosh/distro/refs/heads/main/assess
 ```
 
-Step 3: Execute setup,sh and add the key when prompted:
+Step 3: Execute setup.sh and add the key when prompted:
 
 in your terminal type:
 

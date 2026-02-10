@@ -31,7 +31,7 @@ When prompted for your key copy and paste this line:
 Sk-ant-api03... (and so on)
 ```
 
-This is the ANTHROPIC_API_KEY I temporarily gave to students to paste into this prompt, and then deleted from google classroom after they completed the installation.
+This is the `ANTHROPIC_API_KEY` I temporarily gave to students to paste into this prompt, and then deleted from google classroom after they completed the installation.
 
 ### Using the tool
 
@@ -46,7 +46,7 @@ cd
 to return to your main directory.
 
 You are now ready to self assess yourself for any of your program code!
-To use this tool, just cd into a directory that holds a program you want to assess, for instance readability.py and type:
+To use this tool, just `cd` into a directory that holds a program you want to assess, for instance `readability.py` and type:
 
 ```
 assess readability.py
@@ -62,3 +62,7 @@ When done, submit the assessment file by typing in the terminal:
 ```
 submit50 cs50nestm/checks/2026/assessment
 ```
+
+### Notes
+
+This `assess` tool will remain available in cs50.dev even after restarting your codespace. It may have to be reinstalled if codespace is rebuilt.

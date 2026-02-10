@@ -65,4 +65,4 @@ submit50 cs50nestm/checks/2026/assessment
 
 ### Notes
 
-This `assess` tool will remain available in `cs50.dev` even after restarting your codespace. It may have to be reinstalled if codespace is rebuilt.
+This is a one time installation. The `assess` tool will remain available in `cs50.dev` even after restarting your codespace. It may have to be reinstalled if codespace is rebuilt.

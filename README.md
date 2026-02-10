@@ -27,7 +27,9 @@ source setup.sh
 
 When prompted for your key copy and paste this line:
 
+```
 Sk-ant-api03... (and so on)
+```
 
 This is the ANTHROPIC_API_KEY I temporarily gave to students to paste into this prompt, and then deleted from google classroom after then completed the installation.
 

@@ -12,10 +12,10 @@ cd ~/aiAssessment
 
 Step 2: Copy and paste the following two lines into your terminal:
 
+```
 wget https://raw.githubusercontent.com/margarettanzosh/distro/refs/heads/main/setup.sh
-
 wget https://raw.githubusercontent.com/margarettanzosh/distro/refs/heads/main/assess
-
+```
 
 Step 3: Execute setup,sh and add the key when prompted:
 

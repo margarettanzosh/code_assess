@@ -1,5 +1,7 @@
 ## Installing and using the code assessment tool with cs50.dev
 
+Each students would install this in their own codespace. My AP students installed this seamlessly in a few minutes.
+
 ### Installation
 
 Step 1: Typing in the terminal, create a new directory:

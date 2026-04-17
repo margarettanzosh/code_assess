@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Simple launcher for student-friendly transcript viewing.
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
+
+if [[ -x "$SCRIPT_DIR/.venv/bin/python" ]]; then
+  "$SCRIPT_DIR/.venv/bin/python" "$SCRIPT_DIR/read_transcript.py" "$@"
+else
+  python3 "$SCRIPT_DIR/read_transcript.py" "$@"
+fi

@@ -1,0 +1,588 @@
+#!/usr/bin/env python3
+"""
+AP CSP FRQ-Style Assessment Tool (Rich Markdown Version)
+Students run this to practice AP CSP-style oral/written prompts anchored to their PPR.
+This version uses the Rich library for markdown rendering.
+"""
+
+import os
+import sys
+import json
+import datetime
+import time
+from pathlib import Path
+from anthropic import Anthropic
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.prompt import Confirm
+from dotenv import load_dotenv
+
+# Load environment variables from .env file in the same directory as this script
+script_dir = Path(__file__).parent
+env_path = script_dir / '.env'
+load_dotenv(dotenv_path=env_path, override=True)
+
+# Initialize Rich console
+console = Console()
+
+# Color codes for terminal output (for non-markdown text)
+class Colors:
+    HEADER = '\033[95m'
+    BLUE = '\033[94m'
+    CYAN = '\033[96m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    END = '\033[0m'
+    BOLD = '\033[1m'
+
+def print_header(text):
+    console.print(f"\n[bold cyan]{text}[/bold cyan]")
+
+def print_ai(text):
+    """Print AI's response with markdown rendering."""
+    console.print("\n[bold blue]🤖 AI:[/bold blue]")
+    md = Markdown(text)
+    console.print(md)
+
+def print_error(text):
+    console.print(f"[bold red]Error:[/bold red] {text}")
+
+def print_success(text):
+    console.print(f"[bold green]✓[/bold green] {text}")
+
+def read_code_file(filepath):
+    """Read the code file and return its contents."""
+    try:
+        with open(filepath, 'r') as f:
+            return f.read()
+    except FileNotFoundError:
+        print_error(f"File '{filepath}' not found.")
+        return None
+    except Exception as e:
+        print_error(f"Error reading file: {e}")
+        return None
+
+def get_file_extension(filepath):
+    """Determine if the file is Python or C."""
+    return filepath.split('.')[-1].lower()
+
+def has_functions_beyond_main(code, language):
+    """Check if the code has functions/procedures other than main()."""
+    import re
+    if language == 'py' or language == 'python':
+        # Look for function definitions (def keyword)
+        func_pattern = r'^\s*def\s+(\w+)\s*\('
+        functions = re.findall(func_pattern, code, re.MULTILINE)
+        # Filter out 'main' and return True if there are other functions
+        return any(func != 'main' for func in functions)
+    elif language == 'c':
+        # Look for function definitions in C
+        func_pattern = r'^\s*\w+\s+(\w+)\s*\([^)]*\)\s*\{'
+        functions = re.findall(func_pattern, code, re.MULTILINE)
+        # Filter out 'main' and return True if there are other functions
+        return any(func != 'main' for func in functions)
+    return False
+
+def check_code_quality(code, language):
+    """Assess if the code appears complete and functional."""
+    code = code.strip()
+    lines = [line for line in code.split('\n') if line.strip() and not line.strip().startswith('#')]
+    
+    # Check for very minimal code
+    if len(lines) < 5:
+        return "INCOMPLETE", "The code is very minimal (fewer than 5 lines of non-comment code)."
+    
+    # Check for obvious syntax issues or incomplete structures
+    issues = []
+    if language in ['py', 'python']:
+        # Look for basic structure
+        if 'def ' not in code and 'for ' not in code and 'while ' not in code and 'if ' not in code:
+            issues.append("lacks basic control structures")
+        if code.count('(') != code.count(')'):
+            issues.append("unmatched parentheses")
+        if code.count('[') != code.count(']'):
+            issues.append("unmatched brackets")
+    elif language == 'c':
+        if 'main' not in code:
+            issues.append("missing main function")
+        if code.count('{') != code.count('}'):
+            issues.append("unmatched braces")
+        if code.count('(') != code.count(')'):
+            issues.append("unmatched parentheses")
+    
+    if issues:
+        return "INCORRECT", f"The code appears to have issues: {', '.join(issues)}."
+    
+    return "OK", ""
+
+def create_assessment_prompt(code, language):
+    """Create the initial prompt for AP FRQ-style questioning."""
+    has_other_functions = has_functions_beyond_main(code, language)
+    code_status, code_issues = check_code_quality(code, language)
+
+    code_quality_note = ""
+    if code_status != "OK":
+        code_quality_note = f"""
+
+**CRITICAL CODE QUALITY ISSUE:** {code_issues} This should factor significantly into your assessment. A student cannot demonstrate understanding of code that is incomplete or non-functional. Be direct about this limitation."""
+
+    question_plan = """Ask exactly 10 questions, one at a time, in this order and with this intent:
+1. Ask the student to identify their selected procedure from their PPR and briefly state its purpose.
+2. Ask the student to identify their selected list/collection from their PPR, where data is added, and where that data is later used.
+3. Ask for one example output and how that output demonstrates program functionality.
+4. Ask for one valid input and what the program does with that input.
+5. Ask for one unexpected/invalid input and the resulting program behavior (or why invalid input is prevented).
+6. Ask about the first conditional/selection in their selected procedure: Boolean expression and a value that makes it true or false.
+7. Ask about the first iteration in their selected procedure: what the loop body accomplishes and when it runs at least once.
+8. Ask for two procedure calls (or one if only one behavior path exists) with expected outcomes, highlighting how arguments can change behavior.
+9. Ask for a plausible logic error modification in either the selected procedure or list-usage code and explain resulting behavior.
+10. Ask a maintainability/abstraction question: parameters, decomposition, or why using a procedure/list manages complexity.
+
+If the student says a code segment is starter/distributed code, avoid asking about that segment and adapt the next question."""
+
+    if not has_other_functions:
+        question_plan += "\n\nIf the program has no procedure beyond main, still ask decomposition/abstraction questions using the closest reusable logic block and explicitly note that constraint."
+    
+    return f"""You are an AP Computer Science Principles practice coach.
+Your job is to run an FRQ-style oral practice session aligned to a student's Personalized Project Reference (PPR).
+
+**The student's code ({language}):**
+```{language}
+{code}
+```{code_quality_note}
+
+**Question plan:**
+{question_plan}
+
+**Your approach and rules:**
+- Ask exactly ONE question at a time - never combine multiple questions together
+- Ask exactly 10 total questions, no more and no fewer
+- Start with a brief greeting (1 sentence) and then ask question 1
+- Ask about specific parts of their code and PPR-aligned elements
+- Ask "why" and "how" questions, not just "what"
+- Keep each question concise and focused; avoid repeated concepts
+- This is NOT graded; never assign a score, rubric level, or pass/fail label
+- After each student response (questions 1-9), give 1-2 sentences of coaching feedback, then ask the next question
+- Coaching feedback should mention one thing they did well and one thing to clarify or improve
+- Prioritize AP CSP Create requirements over efficiency/style; efficiency is optional
+- Focus code suggestions on whether they can clearly discuss: selected procedure, parameters, selection, iteration, list/collection, where data is added, where list data is used, and a procedure call
+- Do not provide final summary until after the 10th answer
+- After question 10, provide a short "Practice Feedback Summary" with:
+    1) Response strengths (2 bullets)
+    2) Response improvements for FRQ writing/speaking (2-3 bullets)
+    3) Code improvements to better satisfy/explain AP Create requirements (2-3 bullets)
+    4) A brief encouraging goodbye
+- IMPORTANT: If the student says parts are starter/distributed code, respect that and avoid those segments
+
+**Language-specific accuracy:**
+- **Python:** Using `=` (assignment) instead of `==` (comparison) in an if statement DOES produce a syntax error in Python
+- **C/C++:** Using `=` (assignment) instead of `==` (comparison) in an if statement does NOT produce a syntax error in C/C++ (it's valid but often unintended - it assigns and then evaluates the result)
+- Be precise about what constitutes a syntax error vs a logic error in the specific language being assessed
+
+Start by briefly greeting the student, reminding them this is practice (not graded), and asking question 1."""
+
+
+def generate_practice_feedback(client, system_prompt, conversation_history, question_count, max_questions):
+    """Generate feedback summary even if the student ends early."""
+    if question_count <= 0:
+        return None
+
+    feedback_request = {
+        "role": "user",
+        "content": (
+            f"[SYSTEM: The student ended practice early after answering {question_count} of {max_questions} questions. "
+            "Provide a concise Practice Feedback Summary based only on what they already shared. "
+            "Use exactly these headings: 'Response strengths', 'Response improvements', 'Code improvements for AP Create requirements', 'Next practice step'. "
+            "Use short bullet points under each heading. Keep this non-graded and encouraging.]"
+        )
+    }
+
+    try:
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=700,
+            system=system_prompt,
+            messages=conversation_history + [feedback_request]
+        )
+        return response.content[0].text
+    except Exception as e:
+        console.print(f"[yellow]Could not generate feedback summary: {e}[/yellow]")
+        return None
+
+def conduct_assessment(code, language, student_name):
+    """Run the interactive assessment session."""
+    # API key from environment variable (set by setup script)
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    
+    if not api_key:
+        print_error("API key not configured.")
+        console.print("Please run the setup script provided by your instructor:")
+        console.print("  source setup.sh")
+        return None
+    
+    try:
+        client = Anthropic(api_key=api_key)
+    except Exception as e:
+        print_error(f"Failed to initialize Anthropic client: {e}")
+        return None
+    
+    # Initialize conversation
+    conversation_history = []
+    system_prompt = create_assessment_prompt(code, language)
+    
+    print_header("🎓 AP CSP FRQ Practice Assessment Started")
+    console.print(f"Student: {student_name}")
+    console.print(f"Time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    console.print("\nYou'll have a conversation with an AI coach about your code.")
+    console.print("This is practice only and is not graded.")
+    console.print("Answer thoughtfully and explain your reasoning.")
+    console.print("Type 'quit' or 'exit' to end early.\n")
+    console.print("=" * 60)
+    
+    question_count = 0
+    max_questions = 10
+    feedback_summary = None
+    response_times = []  # Track time taken for each response
+    SLOW_RESPONSE_THRESHOLD = 180  # 3 minutes in seconds
+    
+    # Initial message to start the assessment
+    conversation_history.append({
+        "role": "user",
+        "content": f"Hi! My name is {student_name}. I'm ready to discuss my code."
+    })
+    
+    while question_count < max_questions:
+        try:
+            # Get AI response
+            response = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=1000,
+                system=system_prompt,
+                messages=conversation_history
+            )
+            
+            assistant_message = response.content[0].text
+            conversation_history.append({
+                "role": "assistant",
+                "content": assistant_message
+            })
+            
+            print_ai(assistant_message)
+            
+            # Check if AI is wrapping up (only near the very end)
+            if question_count >= max_questions - 1:
+                if any(phrase in assistant_message.lower() for phrase in 
+                       ["that concludes", "that's all", "thank you for", "we've covered", "final thoughts", "to wrap up"]):
+                    console.print("\n" + "=" * 60)
+                    print_success("Assessment complete!")
+                    break
+            
+            # Start timing the student's response
+            response_start_time = time.time()
+            
+            # Get student response
+            student_response = console.input("\n[bold green]You:[/bold green] ").strip()
+            
+            # Calculate response time
+            response_time = time.time() - response_start_time
+            
+            if student_response.lower() in ['quit', 'exit']:
+                console.print("\n[yellow]Ending assessment early...[/yellow]")
+                console.print(f"[yellow]Completed {question_count} of {max_questions} questions.[/yellow]")
+                # Add early finish marker to conversation
+                conversation_history.append({
+                    "role": "user",
+                    "content": "[ASSESSMENT ENDED EARLY BY STUDENT]"
+                })
+                feedback_summary = generate_practice_feedback(
+                    client,
+                    system_prompt,
+                    conversation_history,
+                    question_count,
+                    max_questions
+                )
+                if feedback_summary:
+                    conversation_history.append({
+                        "role": "assistant",
+                        "content": feedback_summary
+                    })
+                    print_ai(feedback_summary)
+                break
+            
+            if not student_response:
+                # Ask if they meant to finish or just hit enter by accident
+                should_continue = Confirm.ask("[yellow]You didn't enter a response. Do you want to continue the assessment?[/yellow]", default=True)
+                if should_continue:
+                    console.print("[cyan]Please provide your response to the question above.[/cyan]")
+                    continue
+                else:
+                    console.print("\n[yellow]Ending assessment early...[/yellow]")
+                    console.print(f"[yellow]Completed {question_count} of {max_questions} questions.[/yellow]")
+                    conversation_history.append({
+                        "role": "user",
+                        "content": "[ASSESSMENT ENDED EARLY BY STUDENT]"
+                    })
+                    feedback_summary = generate_practice_feedback(
+                        client,
+                        system_prompt,
+                        conversation_history,
+                        question_count,
+                        max_questions
+                    )
+                    if feedback_summary:
+                        conversation_history.append({
+                            "role": "assistant",
+                            "content": feedback_summary
+                        })
+                        print_ai(feedback_summary)
+                    break
+            
+            # Record response time
+            response_info = {
+                "question_number": question_count + 1,
+                "response_time_seconds": round(response_time, 2),
+                "is_slow_response": response_time > SLOW_RESPONSE_THRESHOLD,
+                "timestamp": datetime.datetime.now().isoformat()
+            }
+            response_times.append(response_info)
+            
+            # Truncate extremely long responses to prevent context bloat
+            MAX_RESPONSE_LENGTH = 2000  # characters
+            if len(student_response) > MAX_RESPONSE_LENGTH:
+                console.print(f"[yellow]Note: Your response was very long ({len(student_response)} characters). It has been trimmed to {MAX_RESPONSE_LENGTH} characters.[/yellow]")
+                student_response = student_response[:MAX_RESPONSE_LENGTH] + "...[response truncated]"
+            
+            conversation_history.append({
+                "role": "user",
+                "content": student_response
+            })
+            
+            question_count += 1
+            
+            # If we've reached the end, enter Q&A session
+            if question_count >= max_questions:
+                # Ask if they have any questions
+                conversation_history.append({
+                    "role": "user",
+                    "content": "[SYSTEM: The 10-question practice is complete. Ask whether the student wants extra coaching on FRQ wording, code requirement coverage, or both. Be specific and helpful.]"
+                })
+                
+                # Q&A Loop
+                qa_active = True
+                while qa_active:
+                    try:
+                        response = client.messages.create(
+                            model="claude-sonnet-4-20250514",
+                            max_tokens=800,
+                            system=system_prompt,
+                            messages=conversation_history
+                        )
+                        
+                        ai_message = response.content[0].text
+                        conversation_history.append({
+                            "role": "assistant",
+                            "content": ai_message
+                        })
+                        
+                        print_ai(ai_message)
+                        
+                        # Get student's question or response
+                        student_input = console.input("\n[bold green]You:[/bold green] ").strip()
+                        
+                        if not student_input:
+                            should_continue = Confirm.ask("[yellow]You didn't enter a response. Do you want to continue?[/yellow]", default=True)
+                            if not should_continue:
+                                student_input = "No, I don't have any questions."
+                            else:
+                                continue
+                        
+                        # Check if student is saying they have no questions
+                        no_questions_phrases = ["no questions", "no question", "i'm good", "im good", "i'm done", 
+                                              "im done", "that's all", "thats all", "no thanks", "no thank you",
+                                              "nope", "no", "nothing"]
+                        
+                        if any(phrase in student_input.lower() for phrase in no_questions_phrases):
+                            # Student has no more questions - say goodbye
+                            conversation_history.append({
+                                "role": "user",
+                                "content": student_input
+                            })
+                            conversation_history.append({
+                                "role": "user",
+                                "content": "[SYSTEM: The student has no more questions. Provide a brief, encouraging closing statement and one final reminder to practice explaining procedure/list/selection/iteration connections clearly.]"
+                            })
+                            
+                            response = client.messages.create(
+                                model="claude-sonnet-4-20250514",
+                                max_tokens=300,
+                                system=system_prompt,
+                                messages=conversation_history
+                            )
+                            
+                            goodbye_message = response.content[0].text
+                            conversation_history.append({
+                                "role": "assistant",
+                                "content": goodbye_message
+                            })
+                            
+                            print_ai(goodbye_message)
+                            qa_active = False
+                        else:
+                            # Student has a question - answer it and ask if more questions
+                            conversation_history.append({
+                                "role": "user",
+                                "content": student_input + "\n\n[SYSTEM: After answering, ask if they want another coaching tip focused on either responses or code requirements.]"
+                            })
+                            
+                    except Exception as e:
+                        console.print(f"\n[yellow]Error during Q&A: {e}[/yellow]")
+                        qa_active = False
+                
+                console.print("\n" + "=" * 60)
+                print_success("Assessment complete!")
+                break
+            
+        except KeyboardInterrupt:
+            console.print("\n\nAssessment interrupted by user.")
+            conversation_history.append({
+                "role": "user",
+                "content": "[ASSESSMENT ENDED EARLY BY STUDENT - KEYBOARD INTERRUPT]"
+            })
+            feedback_summary = generate_practice_feedback(
+                client,
+                system_prompt,
+                conversation_history,
+                question_count,
+                max_questions
+            )
+            if feedback_summary:
+                conversation_history.append({
+                    "role": "assistant",
+                    "content": feedback_summary
+                })
+                print_ai(feedback_summary)
+            break
+        except Exception as e:
+            error_msg = str(e).lower()
+            # Check if it's a token limit error
+            if 'token' in error_msg or 'context' in error_msg or 'length' in error_msg:
+                print_error("The conversation has become too long for the AI to process.")
+                console.print("[yellow]This can happen with very lengthy responses. The assessment will end here.[/yellow]")
+                console.print(f"[cyan]Questions completed: {question_count}[/cyan]")
+                # Mark in conversation
+                conversation_history.append({
+                    "role": "user",
+                    "content": "[ASSESSMENT ENDED DUE TO CONTEXT LENGTH]"
+                })
+                break
+            else:
+                print_error(f"Error during assessment: {e}")
+                break
+    
+    return conversation_history, response_times, feedback_summary
+
+def save_transcript(conversation, student_name, code_file, code, language, response_times, feedback_summary=None):
+    """Save the assessment transcript to a JSON file."""
+    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    filename = f"assessment.json"
+    
+    # Check if student finished early
+    early_finish = any("[ASSESSMENT ENDED EARLY BY STUDENT]" in msg.get("content", "") 
+                      for msg in conversation)
+    
+    # Count actual questions answered (user messages after the initial greeting)
+    questions_answered = len([msg for msg in conversation if msg["role"] == "user"]) - 1
+    
+    # Check code quality
+    code_status, code_issues = check_code_quality(code, language)
+    
+    # Calculate response time statistics
+    slow_responses = [rt for rt in response_times if rt.get('is_slow_response', False)]
+    avg_response_time = sum(rt['response_time_seconds'] for rt in response_times) / len(response_times) if response_times else 0
+    
+    transcript = {
+        "student_name": student_name,
+        "code_file": code_file,
+        "language": language,
+        "timestamp": datetime.datetime.now().isoformat(),
+        "code": code,
+        "conversation": conversation,
+        "questions_answered": questions_answered,
+        "completed_full_assessment": questions_answered >= 10 and not early_finish,
+        "code_quality_status": code_status,
+        "code_quality_issues": code_issues if code_status != "OK" else None,
+        "response_times": response_times,
+        "slow_response_count": len(slow_responses),
+        "average_response_time_seconds": round(avg_response_time, 2),
+        "practice_feedback_summary": feedback_summary
+    }
+    
+    try:
+        with open(filename, 'w') as f:
+            json.dump(transcript, f, indent=2)
+        return filename
+    except Exception as e:
+        print_error(f"Failed to save transcript: {e}")
+        return None
+
+def main():
+    if len(sys.argv) < 2:
+        console.print("Usage: APassess <code_file.py|code_file.c> [student_name]")
+        console.print("\nExample:")
+        console.print("  APassess mario.py \"John Smith\"")
+        console.print("  APassess scrabble.c")
+        sys.exit(1)
+    
+    code_file = sys.argv[1]
+    student_name = sys.argv[2] if len(sys.argv) > 2 else console.input("Enter your name: ").strip()
+    
+    if not student_name:
+        student_name = "Student"
+    
+    # Read the code
+    code = read_code_file(code_file)
+    if code is None:
+        sys.exit(1)
+    
+    # Determine language
+    ext = get_file_extension(code_file)
+    if ext == 'py':
+        language = 'python'
+    elif ext == 'c':
+        language = 'c'
+    else:
+        print_error(f"Unsupported file type: .{ext}")
+        console.print("Only Python (.py) and C (.c) files are supported.")
+        sys.exit(1)
+    
+    # Run the assessment
+    result = conduct_assessment(code, language, student_name)
+    
+    if result is None:
+        sys.exit(1)
+    
+    conversation, response_times, feedback_summary = result
+    
+    # Save transcript
+    console.print("\n" + "=" * 60)
+    transcript_file = save_transcript(
+        conversation,
+        student_name,
+        code_file,
+        code,
+        language,
+        response_times,
+        feedback_summary
+    )
+    
+    if transcript_file:
+        print_success(f"Transcript saved to: {transcript_file}")
+        console.print(f"\n📤 Submit this file to your teacher: [bold]{transcript_file}[/bold]")
+    else:
+        print_error("Failed to save transcript. Please try again.")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

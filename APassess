@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 # Load environment variables from .env file in the same directory as this script
 script_dir = Path(__file__).parent
 env_path = script_dir / '.env'
-load_dotenv(dotenv_path=env_path, override=True)
+load_dotenv(dotenv_path=env_path, override=False)
 
 # Initialize Rich console
 console = Console()
@@ -466,6 +466,10 @@ def conduct_assessment(code, language, student_name):
             break
         except Exception as e:
             error_msg = str(e).lower()
+            if 'authentication_error' in error_msg or 'invalid x-api-key' in error_msg:
+                print_error("Your login key was not accepted.")
+                console.print("[yellow]Quick fix: run [bold]source setup.sh[/bold] and then run APassess again.[/yellow]")
+                break
             # Check if it's a token limit error
             if 'token' in error_msg or 'context' in error_msg or 'length' in error_msg:
                 print_error("The conversation has become too long for the AI to process.")

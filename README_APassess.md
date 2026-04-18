@@ -24,6 +24,7 @@ bash install_APassess.sh
 ```
 
 This installs to `~/aiAssessments`, updates your PATH, and enables commands without `./`.
+If `assess` is already installed, it installs in that same folder so both tools use the same setup.
 
 If commands are not recognized in a new terminal yet:
 
@@ -84,7 +85,7 @@ view_transcript --show-system
 
 If `ANTHROPIC_API_KEY` is missing:
 
-Edit `~/aiAssessments/.env` and set:
+Edit the `.env` file in your assess/APassess install folder and set:
 
 ```bash
 ANTHROPIC_API_KEY=sk-ant-your-key-here

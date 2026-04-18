@@ -532,6 +532,13 @@ def save_transcript(conversation, student_name, code_file, code, language, respo
         return None
 
 def main():
+    if len(sys.argv) >= 2 and sys.argv[1] in ['-h', '--help', 'help']:
+        console.print("Usage: APassess <code_file.py|code_file.c> [student_name]")
+        console.print("\nExample:")
+        console.print("  APassess mario.py \"John Smith\"")
+        console.print("  APassess scrabble.c")
+        sys.exit(0)
+
     if len(sys.argv) < 2:
         console.print("Usage: APassess <code_file.py|code_file.c> [student_name]")
         console.print("\nExample:")

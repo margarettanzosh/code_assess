@@ -4,7 +4,7 @@
 set -e
 
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEFAULT_TARGET_DIR="$HOME/aiAssessments"
+DEFAULT_TARGET_DIR="$HOME/aiAssessment"
 TARGET_DIR="${APASSESS_TARGET_DIR:-$DEFAULT_TARGET_DIR}"
 RAW_BASE_URL="${APASSESS_RAW_BASE_URL:-https://raw.githubusercontent.com/margarettanzosh/code_assess/main}"
 

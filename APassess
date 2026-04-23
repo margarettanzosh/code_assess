@@ -167,7 +167,9 @@ def create_assessment_prompt(code, language):
 
 **CRITICAL CODE QUALITY ISSUE:** {code_issues} This should factor significantly into your assessment. A student cannot demonstrate understanding of code that is incomplete or non-functional. Be direct about this limitation."""
 
-    question_plan = """Ask 10-12 questions total, one at a time, covering these key areas in this order:
+    question_plan = """You MUST ask at least 10 questions, one at a time. After the student answers question 10, you will provide feedback and ask if they want to continue. If they continue, ask 2-4 more questions.
+
+Cover these key areas in order (questions 1-10):
 1. Ask the student to identify their selected procedure from their PPR and briefly state its purpose.
 2. Ask the student to identify their selected list/collection from their PPR, where data is added, and where that data is later used.
 3. Ask for one example output and how that output demonstrates program functionality.
@@ -178,7 +180,8 @@ def create_assessment_prompt(code, language):
 8. Ask for two procedure calls (or one if only one behavior path exists) with expected outcomes, highlighting how arguments can change behavior.
 9. Ask for a plausible logic error modification in either the selected procedure or list-usage code and explain resulting behavior.
 10. Ask a maintainability/abstraction question: parameters, decomposition, or why using a procedure/list manages complexity.
-11-12. (Optional) Ask follow-up questions on any areas where the student seemed uncertain or could benefit from deeper exploration.
+
+CRITICAL: You must ask all 10 questions before the feedback/continuation prompt appears. Do not end early.
 
 If the student says a code segment is starter/distributed code, avoid asking about that segment and adapt the next question."""
 
@@ -203,32 +206,55 @@ Your job is to run an FRQ-style oral practice session aligned to a student's Per
 
 **Your approach and rules:**
 - Ask exactly ONE question at a time - never combine multiple questions together
-- Ask 10-12 total questions (adjust based on student's responses and understanding)
+- You MUST ask at least 10 main questions before the feedback/continuation prompt - do NOT end early
+- After the student answers question 10, the system will provide a feedback prompt
 - Start with a brief greeting (1 sentence) and then ask question 1
 - Ask about specific parts of their code and PPR-aligned elements
 - When mentioning a line, always use the line numbers from the numbered code block above
 - Ask "why" and "how" questions, not just "what"
 - Keep each question concise and focused; avoid repeated concepts
 - This is NOT graded; never assign a score, rubric level, or pass/fail label
-- After each student response (questions 1-9), give 1-2 sentences of coaching feedback, then ask the next question
-- Coaching feedback should mention one thing they did well and one thing to clarify or improve
+
+**Handling incomplete or unclear answers:**
+- If a student's answer is incomplete, vague, or off-topic, you may ask ONE clarifying question to help them elaborate
+- After they answer the clarifying question, provide 1-2 sentences of coaching feedback
+- Then move to the NEXT main question
+- If the answer is reasonably complete (even if not perfect), skip the clarification and just give feedback + next question
+- Clarifying questions should be specific: "Can you explain what you mean by X?" or "Which part of the code does that?"
+
+**After complete answers:**
+- Give 1-2 sentences of coaching feedback mentioning one thing they did well and one thing to improve
+- Then ask the NEXT main question (and only that question)
+- Do not include rhetorical questions in your feedback - only include your one main question
+
 - Prioritize AP CSP Create requirements over efficiency/style; efficiency is optional
 - Focus code suggestions on whether they can clearly discuss: selected procedure, parameters, selection, iteration, list/collection, where data is added, where list data is used, and a procedure call
 - Important AP rule: do not suggest adding comments to PPR snippets; comments are fine in the full program code, but PPR snippets should remain comment-free for exam-style practice
-- Do not provide final summary until after the 10th answer
-- After question 10, provide a short "Practice Feedback Summary" with:
-    1) Response strengths (2 bullets)
-    2) Response improvements for FRQ writing/speaking (2-3 bullets)
-    3) Code improvements to better satisfy/explain AP Create requirements (2-3 bullets)
-    4) A brief encouraging goodbye
 - IMPORTANT: If the student says parts are starter/distributed code, respect that and avoid those segments
+
+**Response Format:**
+Your responses should follow one of these patterns:
+
+Pattern A - When the answer is reasonably complete:
+1. Brief feedback on the student's answer (1-2 sentences: one positive, one improvement)
+2. Your next main question (ONE question only)
+3. STOP
+
+Pattern B - When the answer is incomplete/unclear:
+1. Ask ONE specific clarifying question to help them elaborate
+2. Wait for their response
+3. After they answer the clarification, provide feedback (1-2 sentences)
+4. Then ask your next main question
+5. STOP
+
+Do not add extra questions beyond the one clarifying question or the one main question.
 
 **Language-specific accuracy:**
 - **Python:** Using `=` (assignment) instead of `==` (comparison) in an if statement DOES produce a syntax error in Python
 - **C/C++:** Using `=` (assignment) instead of `==` (comparison) in an if statement does NOT produce a syntax error in C/C++ (it's valid but often unintended - it assigns and then evaluates the result)
 - Be precise about what constitutes a syntax error vs a logic error in the specific language being assessed
 
-Start by briefly greeting the student, reminding them this is practice (not graded), and asking question 1."""
+Start by briefly greeting the student (1 sentence), reminding them this is practice (not graded), and asking question 1. Remember: ask only ONE question per response and wait for their answer before continuing."""
 
 
 def generate_practice_feedback(client, system_prompt, conversation_history, question_count, max_questions):
@@ -321,10 +347,11 @@ def conduct_assessment(code, language, student_name):
             
             print_ai(assistant_message)
             
-            # Check if AI is wrapping up (only near the very end)
-            if question_count >= max_questions - 1:
+            # Don't allow early termination - ensure at least min_questions are asked
+            # Only check for wrap-up after the continuation point
+            if question_count >= min_questions and initial_round_complete:
                 if any(phrase in assistant_message.lower() for phrase in 
-                       ["that concludes", "that's all", "thank you for", "we've covered", "final thoughts", "to wrap up"]):
+                       ["that concludes", "that's all", "thank you for completing", "we've finished", "final thoughts", "to wrap up"]):
                     console.print("\n" + "=" * 60)
                     print_success("Assessment complete!")
                     break

@@ -5,14 +5,16 @@ It does not replace the original README.
 
 ## What This Version Includes
 
-- `APassess`: AP CSP FRQ-style practice interview (10 questions)
+- `APassess`: AP CSP FRQ-style practice interview (10-12 questions)
 - `read_transcript.py`: readable JSON transcript formatter
-- `view_transcript`: simple launcher for transcript viewing
+- `view_transcript`: simple launcher for transcript viewing with multiple attempt support
 
 This version is coaching-focused:
 - Not graded
-- Gives feedback on student responses
+- Gives feedback on student responses after initial questions
+- Students can continue with more questions or stop after feedback
 - Suggests improvements for FRQ explanations and AP Create requirement coverage
+- Supports multiple practice attempts - each session is saved separately
 - If a student ends early, they still receive a feedback summary
 
 ## Quick Install
@@ -49,7 +51,7 @@ apassess project.c "Noah"
 
 ## Transcript Viewing (Student-Friendly)
 
-Open the latest/default transcript:
+View your transcripts (will show a list to choose from if you have multiple practice attempts):
 
 ```bash
 view_transcript
@@ -58,7 +60,7 @@ view_transcript
 Open a specific transcript:
 
 ```bash
-view_transcript assessment.json
+view_transcript assessment_John_Smith_20260423_143052.json
 ```
 
 Show fewer messages:
@@ -73,13 +75,21 @@ Include internal system messages:
 view_transcript --show-system
 ```
 
+**Note:** Each time you practice, a new transcript file is created with a unique timestamp. This allows you to:
+- Practice multiple times with the same code
+- Compare your responses across attempts
+- See your improvement over time
+- Choose which attempt to submit to your teacher
+
 ## Typical Student Workflow
 
 1. Run `APassess` on their project file.
-2. Complete all questions or end early with `quit`/`exit`.
-3. Receive coaching feedback summary.
-4. Run `view_transcript` to review responses and improvement suggestions.
-5. Submit `assessment.json` if requested by teacher.
+2. Answer 10-12 questions about their code.
+3. Receive coaching feedback on their understanding.
+4. Choose to continue with more questions or finish.
+5. Review responses with `view_transcript` (select which attempt if multiple exist).
+6. Practice again if desired - each session saves separately.
+7. Submit their best transcript file (e.g., `assessment_StudentName_20260423_143052.json`) to teacher.
 
 ## Troubleshooting
 

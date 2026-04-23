@@ -19,16 +19,67 @@ from rich.text import Text
 console = Console()
 
 
-def find_default_transcript() -> Path | None:
-    """Return assessment.json if present, else newest assessment*.json in cwd."""
+def find_all_transcripts() -> list[Path]:
+    """Find all assessment JSON files in the current directory."""
     cwd = Path.cwd()
-
-    primary = cwd / "assessment.json"
-    if primary.exists():
-        return primary
-
     candidates = sorted(cwd.glob("assessment*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-    return candidates[0] if candidates else None
+    return candidates
+
+
+def choose_transcript(transcripts: list[Path]) -> Path | None:
+    """Let the user choose from multiple transcripts."""
+    if not transcripts:
+        return None
+    
+    if len(transcripts) == 1:
+        return transcripts[0]
+    
+    # Display options
+    console.print("\n[bold cyan]Available Assessment Transcripts:[/bold cyan]\n")
+    
+    table = Table(show_header=True, box=None)
+    table.add_column("#", style="cyan", justify="right")
+    table.add_column("File", style="white")
+    table.add_column("Date/Time", style="yellow")
+    table.add_column("Student", style="green")
+    table.add_column("Attempt", style="magenta")
+    
+    for idx, path in enumerate(transcripts, start=1):
+        # Try to load basic info from each file
+        try:
+            with path.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            student_name = data.get("student_name", "N/A")
+            timestamp = format_timestamp(data.get("timestamp", ""))
+            attempt = data.get("attempt_number", "?")
+        except Exception:
+            student_name = "N/A"
+            timestamp = "N/A"
+            attempt = "?"
+        
+        table.add_row(str(idx), path.name, timestamp, student_name, str(attempt))
+    
+    console.print(table)
+    console.print()
+    
+    # Get user choice
+    while True:
+        try:
+            choice = console.input("[bold green]Select transcript number (or press Enter for most recent): [/bold green]").strip()
+            
+            if not choice:
+                return transcripts[0]  # Most recent
+            
+            choice_num = int(choice)
+            if 1 <= choice_num <= len(transcripts):
+                return transcripts[choice_num - 1]
+            else:
+                console.print(f"[red]Please enter a number between 1 and {len(transcripts)}[/red]")
+        except ValueError:
+            console.print("[red]Please enter a valid number[/red]")
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Cancelled[/yellow]")
+            return None
 
 
 def load_json(path: Path) -> dict:
@@ -61,6 +112,10 @@ def print_header(data: dict, source_path: Path) -> None:
 
     table.add_row("Transcript", str(source_path))
     table.add_row("Student", data.get("student_name", "N/A"))
+    
+    if "attempt_number" in data:
+        table.add_row("Attempt #", str(data.get("attempt_number")))
+    
     table.add_row("Code file", data.get("code_file", "N/A"))
     table.add_row("Language", str(data.get("language", "N/A")).upper())
     table.add_row("Timestamp", format_timestamp(data.get("timestamp", "")))
@@ -128,7 +183,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "transcript",
         nargs="?",
-        help="Path to transcript JSON. If omitted, uses assessment.json or newest assessment*.json in current folder."
+        help="Path to transcript JSON. If omitted, shows all available transcripts and lets you choose."
     )
     parser.add_argument(
         "--limit",
@@ -150,12 +205,15 @@ def main() -> None:
     if args.transcript:
         transcript_path = Path(args.transcript)
     else:
-        default_path = find_default_transcript()
-        if default_path is None:
+        transcripts = find_all_transcripts()
+        if not transcripts:
             console.print("[bold red]No transcript found.[/bold red]")
             console.print("Put assessment.json in this folder or pass a file path.")
             sys.exit(1)
-        transcript_path = default_path
+        
+        transcript_path = choose_transcript(transcripts)
+        if transcript_path is None:
+            sys.exit(0)
 
     data = load_json(transcript_path)
     print_header(data, transcript_path)

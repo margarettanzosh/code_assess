@@ -52,6 +52,39 @@ def print_error(text):
 def print_success(text):
     console.print(f"[bold green]✓[/bold green] {text}")
 
+
+def is_likely_pasted_response(response_text, response_time_seconds):
+    """Heuristic check for likely pasted/externally-generated responses."""
+    text = response_text.strip()
+    if not text or response_time_seconds <= 0:
+        return False
+
+    length = len(text)
+    chars_per_second = length / max(response_time_seconds, 0.01)
+
+    # Very fast, long submissions are unlikely to be typed manually.
+    if length >= 120 and chars_per_second > 14:
+        return True
+
+    # Multi-line structured blocks pasted quickly are also suspicious.
+    line_count = len(text.splitlines())
+    has_structured_format = any(marker in text for marker in ["- ", "1.", "2.", "3.", "```", "**"])
+    if length >= 180 and line_count >= 3 and has_structured_format and chars_per_second > 8:
+        return True
+
+    # Common AI-signature phrasing.
+    ai_signature_phrases = [
+        "as an ai",
+        "as a language model",
+        "here's a breakdown",
+        "let's analyze",
+    ]
+    lower_text = text.lower()
+    if any(phrase in lower_text for phrase in ai_signature_phrases):
+        return True
+
+    return False
+
 def read_code_file(filepath):
     """Read the code file and return its contents."""
     try:
@@ -117,10 +150,16 @@ def check_code_quality(code, language):
     
     return "OK", ""
 
+
+def add_line_numbers(code):
+    """Return code with explicit 1-based line numbers for stable references."""
+    return "\n".join(f"{i:>4}: {line}" for i, line in enumerate(code.splitlines(), start=1))
+
 def create_assessment_prompt(code, language):
     """Create the initial prompt for AP FRQ-style questioning."""
     has_other_functions = has_functions_beyond_main(code, language)
     code_status, code_issues = check_code_quality(code, language)
+    numbered_code = add_line_numbers(code)
 
     code_quality_note = ""
     if code_status != "OK":
@@ -128,7 +167,7 @@ def create_assessment_prompt(code, language):
 
 **CRITICAL CODE QUALITY ISSUE:** {code_issues} This should factor significantly into your assessment. A student cannot demonstrate understanding of code that is incomplete or non-functional. Be direct about this limitation."""
 
-    question_plan = """Ask exactly 10 questions, one at a time, in this order and with this intent:
+    question_plan = """Ask 10-12 questions total, one at a time, covering these key areas in this order:
 1. Ask the student to identify their selected procedure from their PPR and briefly state its purpose.
 2. Ask the student to identify their selected list/collection from their PPR, where data is added, and where that data is later used.
 3. Ask for one example output and how that output demonstrates program functionality.
@@ -139,6 +178,7 @@ def create_assessment_prompt(code, language):
 8. Ask for two procedure calls (or one if only one behavior path exists) with expected outcomes, highlighting how arguments can change behavior.
 9. Ask for a plausible logic error modification in either the selected procedure or list-usage code and explain resulting behavior.
 10. Ask a maintainability/abstraction question: parameters, decomposition, or why using a procedure/list manages complexity.
+11-12. (Optional) Ask follow-up questions on any areas where the student seemed uncertain or could benefit from deeper exploration.
 
 If the student says a code segment is starter/distributed code, avoid asking about that segment and adapt the next question."""
 
@@ -153,14 +193,20 @@ Your job is to run an FRQ-style oral practice session aligned to a student's Per
 {code}
 ```{code_quality_note}
 
+**Same code with fixed line numbers for discussion (use these numbers when referring to lines):**
+```text
+{numbered_code}
+```
+
 **Question plan:**
 {question_plan}
 
 **Your approach and rules:**
 - Ask exactly ONE question at a time - never combine multiple questions together
-- Ask exactly 10 total questions, no more and no fewer
+- Ask 10-12 total questions (adjust based on student's responses and understanding)
 - Start with a brief greeting (1 sentence) and then ask question 1
 - Ask about specific parts of their code and PPR-aligned elements
+- When mentioning a line, always use the line numbers from the numbered code block above
 - Ask "why" and "how" questions, not just "what"
 - Keep each question concise and focused; avoid repeated concepts
 - This is NOT graded; never assign a score, rubric level, or pass/fail label
@@ -168,6 +214,7 @@ Your job is to run an FRQ-style oral practice session aligned to a student's Per
 - Coaching feedback should mention one thing they did well and one thing to clarify or improve
 - Prioritize AP CSP Create requirements over efficiency/style; efficiency is optional
 - Focus code suggestions on whether they can clearly discuss: selected procedure, parameters, selection, iteration, list/collection, where data is added, where list data is used, and a procedure call
+- Important AP rule: do not suggest adding comments to PPR snippets; comments are fine in the full program code, but PPR snippets should remain comment-free for exam-style practice
 - Do not provide final summary until after the 10th answer
 - After question 10, provide a short "Practice Feedback Summary" with:
     1) Response strengths (2 bullets)
@@ -201,7 +248,7 @@ def generate_practice_feedback(client, system_prompt, conversation_history, ques
 
     try:
         response = client.messages.create(
-            model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-5-20250929",
             max_tokens=700,
             system=system_prompt,
             messages=conversation_history + [feedback_request]
@@ -238,12 +285,15 @@ def conduct_assessment(code, language, student_name):
     console.print("\nYou'll have a conversation with an AI coach about your code.")
     console.print("This is practice only and is not graded.")
     console.print("Answer thoughtfully and explain your reasoning.")
-    console.print("Type 'quit' or 'exit' to end early.\n")
+    console.print("Type 'quit' or 'exit' to end early.")
+    console.print("\n[dim]💡 You can practice as many times as you want. Each session is saved separately.[/dim]\n")
     console.print("=" * 60)
     
     question_count = 0
-    max_questions = 10
+    max_questions = 12  # Allow up to 12 questions per round
+    min_questions = 10  # Provide feedback after at least 10 questions
     feedback_summary = None
+    initial_round_complete = False
     response_times = []  # Track time taken for each response
     SLOW_RESPONSE_THRESHOLD = 180  # 3 minutes in seconds
     
@@ -257,7 +307,7 @@ def conduct_assessment(code, language, student_name):
         try:
             # Get AI response
             response = client.messages.create(
-                model="claude-sonnet-4-20250514",
+                    model="claude-sonnet-4-5-20250929",
                 max_tokens=1000,
                 system=system_prompt,
                 messages=conversation_history
@@ -290,7 +340,7 @@ def conduct_assessment(code, language, student_name):
             
             if student_response.lower() in ['quit', 'exit']:
                 console.print("\n[yellow]Ending assessment early...[/yellow]")
-                console.print(f"[yellow]Completed {question_count} of {max_questions} questions.[/yellow]")
+                console.print(f"[yellow]Completed {question_count} questions.[/yellow]")
                 # Add early finish marker to conversation
                 conversation_history.append({
                     "role": "user",
@@ -319,7 +369,7 @@ def conduct_assessment(code, language, student_name):
                     continue
                 else:
                     console.print("\n[yellow]Ending assessment early...[/yellow]")
-                    console.print(f"[yellow]Completed {question_count} of {max_questions} questions.[/yellow]")
+                    console.print(f"[yellow]Completed {question_count} questions.[/yellow]")
                     conversation_history.append({
                         "role": "user",
                         "content": "[ASSESSMENT ENDED EARLY BY STUDENT]"
@@ -338,6 +388,15 @@ def conduct_assessment(code, language, student_name):
                         })
                         print_ai(feedback_summary)
                     break
+
+            if is_likely_pasted_response(student_response, response_time):
+                console.print("[red]Please do not paste generated responses.[/red]")
+                console.print("[yellow]Type your own answer in your own words so this practice is accurate.[/yellow]")
+                conversation_history.append({
+                    "role": "user",
+                    "content": "[SYSTEM EVENT: Response rejected due to likely pasted/generated content. Student asked to retype.]"
+                })
+                continue
             
             # Record response time
             response_info = {
@@ -361,12 +420,80 @@ def conduct_assessment(code, language, student_name):
             
             question_count += 1
             
-            # If we've reached the end, enter Q&A session
-            if question_count >= max_questions:
+            # After 10+ questions in the initial round, provide feedback and ask if they want to continue
+            if question_count >= min_questions and not initial_round_complete:
+                console.print("\n" + "=" * 60)
+                
+                # Request feedback from AI
+                feedback_prompt = """[SYSTEM: The student has answered the initial set of questions. Please provide brief, encouraging feedback on their understanding based on their answers so far. Then ask if they would like to continue with more practice questions or if they are done for today. Keep the feedback positive and constructive, highlighting what they understood well. Use markdown formatting.]"""
+                
+                conversation_history.append({
+                    "role": "user",
+                    "content": feedback_prompt
+                })
+                
+                # Get feedback response
+                try:
+                    feedback_response = client.messages.create(
+                        model="claude-sonnet-4-5-20250929",
+                        max_tokens=1000,
+                        system=system_prompt,
+                        messages=conversation_history
+                    )
+                    
+                    feedback_message = feedback_response.content[0].text
+                    conversation_history.append({
+                        "role": "assistant",
+                        "content": feedback_message
+                    })
+                    
+                    print_ai(feedback_message)
+                    
+                    # Get student's response about continuing
+                    continue_response = console.input("\n[bold green]You:[/bold green] ").strip()
+                    
+                    if continue_response.lower() in ['quit', 'exit']:
+                        console.print("\n[yellow]Ending assessment...[/yellow]")
+                        break
+                    
+                    conversation_history.append({
+                        "role": "user",
+                        "content": continue_response
+                    })
+                    
+                    # Check if they want to continue
+                    if any(word in continue_response.lower() for word in ['yes', 'sure', 'okay', 'ok', 'continue', 'more', 'keep going']):
+                        # Continue with more questions
+                        console.print("\n" + "=" * 60)
+                        print_success("Great! Let's continue with more practice questions.")
+                        console.print("=" * 60)
+                        question_count = 0  # Reset counter for new round
+                        initial_round_complete = True
+                        
+                        # Send continuation message
+                        continuation_message = "Excellent! Let's dive deeper with some more questions about your code to strengthen your understanding."
+                        conversation_history.append({
+                            "role": "assistant",
+                            "content": continuation_message
+                        })
+                        print_ai(continuation_message)
+                        continue
+                    else:
+                        # Student doesn't want to continue - go to Q&A or end
+                        console.print("\n" + "=" * 60)
+                        print_success("Assessment complete! Thank you for your participation.")
+                        break
+                        
+                except Exception as e:
+                    console.print(f"\n[yellow]Error generating feedback: {e}[/yellow]")
+                    break
+            
+            # If we've reached the end of a continuation round, enter Q&A session
+            if question_count >= max_questions and initial_round_complete:
                 # Ask if they have any questions
                 conversation_history.append({
                     "role": "user",
-                    "content": "[SYSTEM: The 10-question practice is complete. Ask whether the student wants extra coaching on FRQ wording, code requirement coverage, or both. Be specific and helpful.]"
+                    "content": "[SYSTEM: The initial practice round is complete. Ask whether the student wants extra coaching on FRQ wording, code requirement coverage, or both. Be specific and helpful.]"
                 })
                 
                 # Q&A Loop
@@ -374,7 +501,7 @@ def conduct_assessment(code, language, student_name):
                 while qa_active:
                     try:
                         response = client.messages.create(
-                            model="claude-sonnet-4-20250514",
+                                model="claude-sonnet-4-5-20250929",
                             max_tokens=800,
                             system=system_prompt,
                             messages=conversation_history
@@ -415,7 +542,7 @@ def conduct_assessment(code, language, student_name):
                             })
                             
                             response = client.messages.create(
-                                model="claude-sonnet-4-20250514",
+                                    model="claude-sonnet-4-5-20250929",
                                 max_tokens=300,
                                 system=system_prompt,
                                 messages=conversation_history
@@ -488,9 +615,16 @@ def conduct_assessment(code, language, student_name):
     return conversation_history, response_times, feedback_summary
 
 def save_transcript(conversation, student_name, code_file, code, language, response_times, feedback_summary=None):
-    """Save the assessment transcript to a JSON file."""
+    """Save the assessment transcript to a JSON file with unique timestamp."""
     timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-    filename = f"assessment.json"
+    # Create unique filename with student name and timestamp to preserve multiple attempts
+    safe_name = "".join(c if c.isalnum() else "_" for c in student_name)
+    filename = f"assessment_{safe_name}_{timestamp}.json"
+    
+    # Count previous attempts by this student for the same code file
+    import glob
+    existing_files = glob.glob(f"assessment_{safe_name}_*.json")
+    attempt_number = len(existing_files) + 1
     
     # Check if student finished early
     early_finish = any("[ASSESSMENT ENDED EARLY BY STUDENT]" in msg.get("content", "") 
@@ -511,6 +645,7 @@ def save_transcript(conversation, student_name, code_file, code, language, respo
         "code_file": code_file,
         "language": language,
         "timestamp": datetime.datetime.now().isoformat(),
+        "attempt_number": attempt_number,
         "code": code,
         "conversation": conversation,
         "questions_answered": questions_answered,
@@ -526,10 +661,10 @@ def save_transcript(conversation, student_name, code_file, code, language, respo
     try:
         with open(filename, 'w') as f:
             json.dump(transcript, f, indent=2)
-        return filename
+        return filename, attempt_number
     except Exception as e:
         print_error(f"Failed to save transcript: {e}")
-        return None
+        return None, None
 
 def main():
     if len(sys.argv) >= 2 and sys.argv[1] in ['-h', '--help', 'help']:
@@ -578,7 +713,7 @@ def main():
     
     # Save transcript
     console.print("\n" + "=" * 60)
-    transcript_file = save_transcript(
+    transcript_file, attempt_number = save_transcript(
         conversation,
         student_name,
         code_file,
@@ -590,7 +725,10 @@ def main():
     
     if transcript_file:
         print_success(f"Transcript saved to: {transcript_file}")
+        if attempt_number > 1:
+            console.print(f"[cyan]📊 This is practice attempt #{attempt_number}[/cyan]")
         console.print(f"\n📤 Submit this file to your teacher: [bold]{transcript_file}[/bold]")
+        console.print("\n[dim]💡 Tip: You can run this assessment multiple times to practice. Each session will be saved with a unique timestamp.[/dim]")
     else:
         print_error("Failed to save transcript. Please try again.")
         sys.exit(1)

@@ -171,7 +171,7 @@ def create_assessment_prompt(code, language):
 
 Cover these key areas in order (questions 1-10):
 1. Ask the student to identify their selected procedure from their PPR and briefly state its purpose.
-2. Ask the student to identify their selected list/collection from their PPR, where data is added, and where that data is later used.
+2. Ask the student to identify their selected list/collection from their PPR, how the collection is populated (initialized or filled with data), and where that data is later used.
 3. Ask for one example output and how that output demonstrates program functionality.
 4. Ask for one valid input and what the program does with that input.
 5. Ask for one unexpected/invalid input and the resulting program behavior (or why invalid input is prevented).
@@ -228,7 +228,7 @@ Your job is to run an FRQ-style oral practice session aligned to a student's Per
 - Do not include rhetorical questions in your feedback - only include your one main question
 
 - Prioritize AP CSP Create requirements over efficiency/style; efficiency is optional
-- Focus code suggestions on whether they can clearly discuss: selected procedure, parameters, selection, iteration, list/collection, where data is added, where list data is used, and a procedure call
+- Focus code suggestions on whether they can clearly discuss: selected procedure, parameters, selection, iteration, list/collection, how the collection is populated, where list data is used, and a procedure call
 - Important AP rule: do not suggest adding comments to PPR snippets; comments are fine in the full program code, but PPR snippets should remain comment-free for exam-style practice
 - IMPORTANT: If the student says parts are starter/distributed code, respect that and avoid those segments
 
@@ -754,7 +754,6 @@ def main():
         print_success(f"Transcript saved to: {transcript_file}")
         if attempt_number > 1:
             console.print(f"[cyan]📊 This is practice attempt #{attempt_number}[/cyan]")
-        console.print(f"\n📤 Submit this file to your teacher: [bold]{transcript_file}[/bold]")
         console.print("\n[dim]💡 Tip: You can run this assessment multiple times to practice. Each session will be saved with a unique timestamp.[/dim]")
     else:
         print_error("Failed to save transcript. Please try again.")
